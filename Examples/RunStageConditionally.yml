@@ -1,0 +1,35 @@
+# File: RunStageConditionally.yml
+# Author: Thomas Dean
+
+# Problem: You want a step, job or stage to only run under the right conditions.
+# https://docs.microsoft.com/en-us/azure/devops/pipelines/process/conditions?view=azure-devops&tabs=yaml
+
+name: $(BuildID)
+
+trigger: none
+
+parameters:
+- name: doTheThing
+  type: boolean
+  default: false
+
+stages:
+- stage: stage1
+  jobs:
+  - job:
+    steps:
+      - bash: echo This stage always runs.
+
+- ${{ if eq(parameters.doTheThing, true) }}:
+  - stage: stage2
+    jobs:
+    - job:
+      steps:
+        - bash: echo This stage only runs when 'doTheThing' is true.
+
+- stage: stage3
+  condition: eq(${{ parameters.doTheThing }}, true)
+  jobs:
+  - job:
+    steps:
+      - bash: echo This stage also only runs when 'doTheThing' is true.

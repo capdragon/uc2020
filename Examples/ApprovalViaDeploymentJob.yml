@@ -1,0 +1,31 @@
+# File: ApprovalViaDeploymentJob.yml
+# Author: Thomas Dean
+
+# Problem: You want to add approvers to a pipeline.
+
+# Solution: Deployment Jobs
+# https://docs.microsoft.com/en-us/azure/devops/pipelines/process/deployment-jobs?view=azure-devops
+
+name: $(BuildID)
+
+trigger: none
+
+stages:
+
+- stage: Release
+  jobs:
+  - deployment: deploy
+    displayName: Deploy with Stage Approval
+    
+    # This environment will be created if it does not exist.
+    # Once it has been created, approvers can be added through Azure DevOps:
+    #   Environments -> GIS-PortalItem-TEST -> vertical ellipsis -> Approvals and checks
+    # The environment can also be created in the DevOps UI before the pipeline runs.
+    environment: GIS-PortalItem-TEST
+    
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - bash: echo "Running this job (and therefore stage) requires approval."
+              displayName: Deployment Step
