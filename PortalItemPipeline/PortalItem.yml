@@ -1,0 +1,227 @@
+# File: PortalItem-TemplateV2.yml
+# Author: Thomas Dean (tdean1)
+# Starter template for promoting a web map item
+
+
+parameters:
+- name: itemId
+  type: string
+- name: title
+  type: string
+- name: owner
+  type: string
+- name: folder
+  type: string
+- name: itemIdTest
+  type: string
+- name: itemIdProd
+  type: string
+
+- name: DeployToDev
+  type: boolean
+- name: buildId
+  type: string
+
+- name: envs
+  type: object
+  default:
+    dev: DEV
+    test: TEST
+    prod: PROD
+
+
+stages:
+
+#  .----------------.  .----------------.  .----------------.  .----------------.  .----------------. 
+# | .--------------. || .--------------. || .--------------. || .--------------. || .--------------. |
+# | |   ______     | || | _____  _____ | || |     _____    | || |   _____      | || |  ________    | |
+# | |  |_   _ \    | || ||_   _||_   _|| || |    |_   _|   | || |  |_   _|     | || | |_   ___ `.  | |
+# | |    | |_) |   | || |  | |    | |  | || |      | |     | || |    | |       | || |   | |   `. \ | |
+# | |    |  __'.   | || |  | '    ' |  | || |      | |     | || |    | |   _   | || |   | |    | | | |
+# | |   _| |__) |  | || |   \ `--' /   | || |     _| |_    | || |   _| |__/ |  | || |  _| |___.' / | |
+# | |  |_______/   | || |    `.__.'    | || |    |_____|   | || |  |________|  | || | |________.'  | |
+# | |              | || |              | || |              | || |              | || |              | |
+# | '--------------' || '--------------' || '--------------' || '--------------' || '--------------' |
+#  '----------------'  '----------------'  '----------------'  '----------------'  '----------------' 
+
+- stage: Build
+  pool:
+    name: GIS
+  condition: eq(${{ parameters.DeployToDev }}, false)
+  jobs:
+  - job: makePortalItemReplacements
+    displayName: Make Replacements
+
+    variables:
+      url: https://gisgatewaydev.williams.com/portal
+      user: $(portalAdminUserName)
+      pswd: $(portalAdminPassword.NP)
+      buildscript: $(Build.Repository.LocalPath)/makePortalItemReplacements.py
+      replacementsfilename: $(Build.Repository.LocalPath)/PortalItem.Replacements.json
+
+    strategy:
+      maxParallel: 1
+      matrix:
+        dev:
+          jobenv: DEV
+        test:
+          jobenv: TEST
+        prod:
+          jobenv: PROD
+
+    steps:
+      - checkout: self
+        submodules: true
+
+      - bash: |
+          set -e; set -x
+          mkdir ${BUILD_ARTIFACTSTAGINGDIRECTORY}/${JOBENV}
+        displayName: mkdir Build.ArtifactStagingDirectory/$(jobenv)
+
+      - template: directory-status.yml
+
+      - bash: |
+          set -x
+          ARGS=(
+            $BUILDSCRIPT
+            --outputpath "${BUILD_ARTIFACTSTAGINGDIRECTORY}/${JOBENV}"
+            --replacementsFile "$REPLACEMENTSFILENAME"
+            --environment $JOBENV
+            --gisUrl $URL
+            --username $USER
+            --password $PASSWORD
+            --itemTitle "${{ parameters.title }}"
+            --itemId "${{ parameters.itemId }}"
+          )
+          
+          docker run --rm -i -w "$(Build.Repository.LocalPath)" -u 0:0 -v /srv/vsts-data:/srv/vsts-data:rw esridocker/arcgis-api-python-notebook python "${ARGS[@]}"
+        displayName: "Run makePortalItemReplacements.py"
+        env:
+          PASSWORD: $(pswd)
+
+      - task: PublishPipelineArtifact@1
+        inputs:
+          targetPath: $(Build.ArtifactStagingDirectory)/$(jobenv)
+          artifactName: $(jobenv)
+
+
+#  .----------------.  .----------------.  .----------------.  .----------------.  .----------------.  .----------------.  .----------------. 
+# | .--------------. || .--------------. || .--------------. || .--------------. || .--------------. || .--------------. || .--------------. |
+# | |  _______     | || |  _________   | || |   _____      | || |  _________   | || |      __      | || |    _______   | || |  _________   | |
+# | | |_   __ \    | || | |_   ___  |  | || |  |_   _|     | || | |_   ___  |  | || |     /  \     | || |   /  ___  |  | || | |_   ___  |  | |
+# | |   | |__) |   | || |   | |_  \_|  | || |    | |       | || |   | |_  \_|  | || |    / /\ \    | || |  |  (__ \_|  | || |   | |_  \_|  | |
+# | |   |  __ /    | || |   |  _|  _   | || |    | |   _   | || |   |  _|  _   | || |   / ____ \   | || |   '.___`-.   | || |   |  _|  _   | |
+# | |  _| |  \ \_  | || |  _| |___/ |  | || |   _| |__/ |  | || |  _| |___/ |  | || | _/ /    \ \_ | || |  |`\____) |  | || |  _| |___/ |  | |
+# | | |____| |___| | || | |_________|  | || |  |________|  | || | |_________|  | || ||____|  |____|| || |  |_______.'  | || | |_________|  | |
+# | |              | || |              | || |              | || |              | || |              | || |              | || |              | |
+# | '--------------' || '--------------' || '--------------' || '--------------' || '--------------' || '--------------' || '--------------' |
+#  '----------------'  '----------------'  '----------------'  '----------------'  '----------------'  '----------------'  '----------------' 
+
+- ${{ each env in parameters.envs }}:
+  - stage: release_${{ env.key }}
+    pool: GIS
+
+    # Conditions
+    ${{ if eq(env.value, 'DEV') }}:
+      condition: and(eq(${{ parameters.DeployToDev }}, true), not(Canceled()))
+    ${{ if eq(env.value, 'TEST') }}:
+      condition: |
+        and(
+          or(
+            in(dependencies.release_dev.result, 'Succeeded'),
+            in(dependencies.release_dev.result, 'Skipped')
+          ),
+          not(Canceled())
+        )
+    ${{ if eq(env.value, 'PROD') }}:
+      condition: and(in(dependencies.release_test.result, 'Succeeded'), not(Canceled()))
+
+    displayName: Release ${{ env.value }}
+    variables:
+
+      user: $(portalAdminUserName)
+      releasescript: $(Build.Repository.LocalPath)/promotePortalItem.py
+
+      ${{ if eq(env.key, 'dev') }}:
+        url: https://gisgatewaydev.williams.com/portal
+        pswd: $(portalAdminPassword.NP)
+        itemId: ${{ parameters.itemId }}
+
+      ${{ if eq(env.key, 'test') }}:
+        url: https://gisgatewaytest.williams.com/portal
+        pswd: $(portalAdminPassword.NP)
+        itemId: ${{ parameters.itemIdTest }}
+
+      ${{ if eq(env.key, 'prod') }}:
+        url: https://gisgateway.williams.com/portal
+        pswd: $(portalAdminPassword)
+        itemId: ${{ parameters.itemIdProd }}
+
+    jobs:
+    - deployment: promotePortalItem
+      displayName: "Promote ${{ parameters.title }}"
+      environment: GIS-WebMaps-${{ env.value }}
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - checkout: self
+                submodules: true
+
+              - ${{ if eq(parameters.DeployToDev, false) }}:
+                - download: current
+                  artifact: ${{ env.value }}
+
+              - ${{ if eq(parameters.DeployToDev, true) }}:
+                - task: DownloadBuildArtifacts@0
+                  inputs:
+                    buildType: specific
+                    project: Williams
+                    pipeline: WM-DevOpsDemo-yaml
+                    buildVersionToDownload: specific
+                    buildId: ${{ parameters.buildId }}
+                    downloadType: specific
+                    downloadPath: $(System.ArtifactsDirectory)/${{ env.value }}
+                  displayName: "Download Build ${{ parameters.buildId }}"
+
+
+              - bash: |
+                  set -e
+                  VERSION=$MAJOR.$MINOR.$BUILD_BUILDID
+                  echo Version: $VERSION
+
+                  echo old: $(python3 -m json.tool $PATH_TO_FILE | awk '/description/ {print}')
+                   
+                  # REGEX Search Pattern: d[dd].ddd[dd].dddd[dd] (e.g. d[dd]. --> 1 digit min, 3 digit max, followed by '.')
+                  sed -i "s/[0-9]\{1,3\}\.[0-9]\{3,5\}\.[0-9]\{4,6\}/${VERSION}/" $PATH_TO_FILE
+                  echo new: $(python3 -m json.tool $PATH_TO_FILE | awk '/description/ {print}')
+                displayName: Replace Version
+                env:
+                  PATH_TO_FILE: $(Pipeline.Workspace)/${{ env.value }}/description.json
+
+              - bash: set -x; python3 -m json.tool ${PIPELINE_WORKSPACE}/${{ env.value }}/description.json
+                displayName: description.json
+
+              - template: directory-status.yml
+                parameters:
+                  additionalDirs:
+                    Pipeline_Workspace: $(Pipeline.Workspace)/${{ env.value }}
+
+              - bash: |
+                  set -e; set -x
+                  ARGS=(
+                    $RELEASESCRIPT
+                    --artifactPath "${PIPELINE_WORKSPACE}/${{ env.value }}"
+                    --owner "${{ parameters.owner }}"
+                    --folder "${{ parameters.folder }}"
+                    --gisUrlDestination $URL
+                    --usernameDestination $USER
+                    --passwordDestination $PASSWORD
+                    --title "${{ parameters.title }}"
+                    --itemId $ITEMID
+                  )
+
+                  docker run --rm -i -u 0:0 -v /srv/vsts-data:/srv/vsts-data:rw esridocker/arcgis-api-python-notebook python "${ARGS[@]}"
+                displayName: "Run promotePortalItem.py"
+                env:
+                  PASSWORD: $(pswd)

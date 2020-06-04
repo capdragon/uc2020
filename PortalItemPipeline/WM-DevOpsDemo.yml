@@ -1,0 +1,33 @@
+# File: WM-DevOpsDemo.yml
+# Author: Thomas Dean (tdean1)
+
+name: $(BuildID)
+
+parameters:
+- name: DeployToDev
+  type: boolean
+  default: false
+- name: buildId
+  type: string
+  default: latest
+
+trigger: none
+
+variables:
+- group: "Admin Credentials"
+- name: major
+  value: 1
+- name: minor
+  value: $[counter(variables['major'], 100)]
+
+extends:
+  template: Templates/PortalItem.yml
+  parameters:
+    itemId: 35669e216e514534ad5165098d3417be
+    title: DevOpsDemo
+    owner: GIS_Enterprise
+    folder: Mobile
+    itemIdTest: add3baecec9443229af15c71c26d65ef
+    itemIdProd: b5b65fb8c646475f80d72b13f3c8e3c5
+    DeployToDev: ${{ parameters.DeployToDev }}
+    buildId: ${{ parameters.buildId }}

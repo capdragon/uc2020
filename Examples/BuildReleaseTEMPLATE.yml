@@ -1,6 +1,8 @@
 # File: BuildReleaseTEMPLATE.yml
 # Author: Thomas Dean
 
+# define variables: https://docs.microsoft.com/en-us/azure/devops/pipelines/process/variables?view=azure-devops&tabs=yaml%2Cbatch
+
 parameters:
 - name: envs
   type: object
@@ -21,6 +23,7 @@ stages:
   jobs:
   - job: publish_artifacts
     displayName: Publish Artifacts
+
     workspace:
       clean: all
     strategy:
