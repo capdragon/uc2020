@@ -70,6 +70,7 @@ stages:
 
     # These steps will run for each environment.
     steps:
+      # Our Python scripts are nested in a submodule. Default is 'checkout: self'
       - checkout: self
         submodules: true
 

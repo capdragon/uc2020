@@ -1,13 +1,14 @@
 # File: WM-DevOpsDemo.yml
 # Author: Thomas Dean (tdean1)
 
+# Predefined Azure variable representing the current run of the pipeline (e.g. #4610)
 name: $(BuildID)
 
 parameters:
 - name: DeployToDev
   type: boolean
   default: false
-- name: buildId
+- name: buildId # User defined variable to select previous build for DeployToDev
   type: string
   default: latest
 
