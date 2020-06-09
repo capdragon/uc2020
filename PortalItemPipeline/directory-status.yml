@@ -1,0 +1,33 @@
+# File: directory-status.yml
+# Author: Thomas Dean (tdean1)
+# 
+# List the contents of specified directories.
+#   - to override the default directories, define dirList as a parameter
+#     in the file where the template is called
+#   - to keep the defaults as well as list additional directory contents, define
+#     additionalDirs as a parameter
+
+parameters:
+- name: dirList
+  type: object
+  default: 
+    Agent_BuildDirectory: $(Agent.BuildDirectory)
+    Agent_HomeDirectory: $(Agent.HomeDirectory)
+    Build_Repository_LocalPath: $(Build.Repository.LocalPath)
+    Build_ArtifactStagingDirectory: $(Build.ArtifactStagingDirectory)
+- name: additionalDirs
+  type: object
+  default: {}
+
+steps:
+- ${{ each dir in parameters.dirList }}:
+  - script: |
+      echo ${{ dir.value }}/
+      ls -l ${{ dir.value }}/
+    displayName: "DIR: ${{ dir.key }}"
+
+- ${{ each dir in parameters.additionalDirs }}:
+  - script: |
+      echo ${{ dir.value }}/
+      ls -l ${{ dir.value }}/
+    displayName: "DIR: ${{ dir.key }}"

@@ -45,20 +45,19 @@ stages:
 #  '----------------'  '----------------'  '----------------'  '----------------'  '----------------' 
 
 - stage: Build
-  pool:
-    name: GIS
   condition: eq(${{ parameters.DeployToDev }}, false)
   jobs:
   - job: makePortalItemReplacements
     displayName: Make Replacements
 
     variables:
-      url: https://gisgatewaydev.williams.com/portal
+      url: https://dev.enterprise.com/portal
       user: $(portalAdminUserName)
       pswd: $(portalAdminPassword.NP)
       buildscript: $(Build.Repository.LocalPath)/makePortalItemReplacements.py
       replacementsfilename: $(Build.Repository.LocalPath)/PortalItem.Replacements.json
 
+    # Use the matrix strategy to expand this job into three jobs.
     strategy:
       maxParallel: 1
       matrix:
@@ -69,17 +68,23 @@ stages:
         prod:
           jobenv: PROD
 
+    # These steps will run for each environment.
     steps:
       - checkout: self
         submodules: true
 
+      # Create a folder for the current environment in the artifact staging directory (e.g. "c:\agent_work\1\a\DEV").
       - bash: |
           set -e; set -x
           mkdir ${BUILD_ARTIFACTSTAGINGDIRECTORY}/${JOBENV}
         displayName: mkdir Build.ArtifactStagingDirectory/$(jobenv)
 
+      # Print contents of directories for easy checking.
       - template: directory-status.yml
 
+      # Run the build script inside a docker container.
+      # The data.json, description.json & thumbnail.png produced by this script
+      # will be published as artifacts.
       - bash: |
           set -x
           ARGS=(
@@ -99,9 +104,10 @@ stages:
         env:
           PASSWORD: $(pswd)
 
+      # We're ready to publish the environment folder as an artifact.
       - task: PublishPipelineArtifact@1
         inputs:
-          targetPath: $(Build.ArtifactStagingDirectory)/$(jobenv)
+          targetPath: $(Build.ArtifactStagingDirectory)/$(jobenv) # Path to the folder or file you want to publish.
           artifactName: $(jobenv)
 
 
@@ -117,11 +123,13 @@ stages:
 # | '--------------' || '--------------' || '--------------' || '--------------' || '--------------' || '--------------' || '--------------' |
 #  '----------------'  '----------------'  '----------------'  '----------------'  '----------------'  '----------------'  '----------------' 
 
+
 - ${{ each env in parameters.envs }}:
   - stage: release_${{ env.key }}
+    displayName: Release ${{ env.value }}
     pool: GIS
 
-    # Conditions
+    # Set conditions based on the current environment.
     ${{ if eq(env.value, 'DEV') }}:
       condition: and(eq(${{ parameters.DeployToDev }}, true), not(Canceled()))
     ${{ if eq(env.value, 'TEST') }}:
@@ -136,31 +144,41 @@ stages:
     ${{ if eq(env.value, 'PROD') }}:
       condition: and(in(dependencies.release_test.result, 'Succeeded'), not(Canceled()))
 
-    displayName: Release ${{ env.value }}
+    # Set stage variables
     variables:
 
       user: $(portalAdminUserName)
+
+      # Find the script in the source code (e.g. "c:\agent_work\1\s\promotePortalItem.py").
       releasescript: $(Build.Repository.LocalPath)/promotePortalItem.py
 
+      # Set environment specific variables.
       ${{ if eq(env.key, 'dev') }}:
-        url: https://gisgatewaydev.williams.com/portal
+        url: https://dev.enterprise.com/portal
         pswd: $(portalAdminPassword.NP)
         itemId: ${{ parameters.itemId }}
 
       ${{ if eq(env.key, 'test') }}:
-        url: https://gisgatewaytest.williams.com/portal
+        url: https://test.enterprise.com/portal
         pswd: $(portalAdminPassword.NP)
         itemId: ${{ parameters.itemIdTest }}
 
       ${{ if eq(env.key, 'prod') }}:
-        url: https://gisgateway.williams.com/portal
+        url: https://prod.enterprise.com/portal
         pswd: $(portalAdminPassword)
         itemId: ${{ parameters.itemIdProd }}
 
     jobs:
+    # Use a 'deployment' job instead of a regular job to specify an Azure Environment.
+    # Approvals and checks can be added to Azure Environments that are triggered by
+    # deployment jobs for that environment.
     - deployment: promotePortalItem
       displayName: "Promote ${{ parameters.title }}"
-      environment: GIS-WebMaps-${{ env.value }}
+
+      # This Azure Environment will be created if it doesn't already exist.
+      # It can also be created beforehand through the Azure DevOps portal.
+      environment: GIS-PortalItem-${{ env.value }}
+
       strategy:
         runOnce:
           deploy:
@@ -168,23 +186,26 @@ stages:
               - checkout: self
                 submodules: true
 
+              # Standard: promote changes in DEV to TEST & PROD
               - ${{ if eq(parameters.DeployToDev, false) }}:
                 - download: current
                   artifact: ${{ env.value }}
 
+              # Roll back changes: promote changes from a previous build
+              # to DEV, TEST & PROD
               - ${{ if eq(parameters.DeployToDev, true) }}:
-                - task: DownloadBuildArtifacts@0
+                - task: DownloadPipelineArtifact@2
                   inputs:
-                    buildType: specific
+                    source: specific # Not artifacts produced by the current run
                     project: Williams
-                    pipeline: WM-DevOpsDemo-yaml
-                    buildVersionToDownload: specific
-                    buildId: ${{ parameters.buildId }}
-                    downloadType: specific
-                    downloadPath: $(System.ArtifactsDirectory)/${{ env.value }}
+                    pipeline: $(Build.DefinitionName) # Current pipeline
+                    runVersion: specific # Specific build
+                    runId: ${{ parameters.buildId }}
+                    artifact: ${{ env.value }} # Specific artifact
+                    path: $(Pipeline.Workspace)/${{ env.value }} # Destination
                   displayName: "Download Build ${{ parameters.buildId }}"
 
-
+              # Update the portal item description with the new release version.
               - bash: |
                   set -e
                   VERSION=$MAJOR.$MINOR.$BUILD_BUILDID
@@ -199,14 +220,16 @@ stages:
                 env:
                   PATH_TO_FILE: $(Pipeline.Workspace)/${{ env.value }}/description.json
 
+              # Print description.json for easy checking.
               - bash: set -x; python3 -m json.tool ${PIPELINE_WORKSPACE}/${{ env.value }}/description.json
                 displayName: description.json
 
               - template: directory-status.yml
                 parameters:
                   additionalDirs:
-                    Pipeline_Workspace: $(Pipeline.Workspace)/${{ env.value }}
+                    Pipeline_Workspace_${{ env.value }}: $(Pipeline.Workspace)/${{ env.value }}
 
+              # Run the release script inside a docker container.
               - bash: |
                   set -e; set -x
                   ARGS=(
