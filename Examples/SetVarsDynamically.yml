@@ -1,0 +1,49 @@
+# File: SetVarsDynamically.yml
+# Author: Thomas Dean
+
+# Problem:
+# - You need to represent more values in your pipeline, but you don't want to
+#   add more parameters, and you have everything needed to create the
+#   variables dynamically. How do we set runtime variables that can be used in
+#   later steps and jobs?
+
+# Solution: vso task.setvariable
+# https://docs.microsoft.com/en-us/azure/devops/pipelines/process/variables?view=azure-devops&tabs=yaml%2Cbatch
+
+name: $(BuildID)
+
+trigger: none
+
+parameters:
+- name: userVar
+  type: string
+
+stages:
+- stage: stage1
+  jobs:
+  - job: set_variables
+    displayName: Set Variables Dynamically
+    steps:
+      - bash: |
+          echo "##vso[task.setvariable variable=currentJobVar]${{ parameters.userVar }}-CURRENTJOB"
+
+          echo "##vso[task.setvariable variable=multiJobVar;isOutput=true]${{ parameters.userVar }}-MULTIJOB"
+        displayName: userVar creates a new variable
+        name: uniqueID
+
+      - bash: |
+          set -x;
+          echo $CURRENTJOBVAR
+        
+  - job: retrieve_variables
+    displayName: Retrieve Variables
+
+    # This job must depend on the job where the variables are set.
+    dependsOn: set_variables
+    
+    variables:
+      multiJobVar: $[ dependencies.set_variables.outputs['uniqueID.multiJobVar'] ]
+    steps:
+      - bash: |
+          echo $MULTIJOBVAR
+          

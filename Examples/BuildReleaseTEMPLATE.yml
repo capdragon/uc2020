@@ -1,0 +1,72 @@
+# File: BuildReleaseTEMPLATE.yml
+# Author: Thomas Dean
+
+# define variables: https://docs.microsoft.com/en-us/azure/devops/pipelines/process/variables?view=azure-devops&tabs=yaml%2Cbatch
+
+parameters:
+- name: envs
+  type: object
+  default:
+    dev: DEV
+    test: TEST
+    prod: PROD
+- name: fileName
+  type: string
+
+stages:
+
+# 
+# BUILD
+# 
+
+- stage: Build
+  jobs:
+  - job: publish_artifacts
+    displayName: Publish Artifacts
+
+    workspace:
+      clean: all
+    strategy:
+      matrix:
+        dev:
+          jobenv: DEV
+        test:
+          jobenv: TEST
+        prod:
+          jobenv: PROD
+    steps:
+
+      - bash: |
+          set -x;
+
+          mkdir -p $FOLDER_PATH
+
+          echo $MAJOR.$MINOR.$BUILD_BUILDID > $FILE_PATH
+          echo Hello from $JOBENV >> $FILE_PATH
+        displayName: Write to file - $(jobenv)
+        env:
+          FOLDER_PATH: $(Build.ArtifactStagingDirectory)/$(jobenv)
+          FILE_PATH: $(Build.ArtifactStagingDirectory)/$(jobenv)/${{ parameters.fileName }}
+
+      - publish: $(Build.ArtifactStagingDirectory)/$(jobenv)
+        artifact: $(jobenv)
+
+# 
+# RELEASE
+# 
+
+- ${{ each env in parameters.envs }}:
+  - stage: release_${{ env.key }}
+    displayName: Release ${{ env.value }}
+    jobs:
+    - job:
+      displayName: Job - ${{ env.value }}
+      steps:
+
+        - download: current
+          artifact: ${{ env.value }}
+
+        - bash: cat $FILE_PATH
+          displayName: Read from file - ${{ env.value }}
+          env:
+            FILE_PATH: $(Pipeline.Workspace)/${{ env.value }}/${{ parameters.fileName }}

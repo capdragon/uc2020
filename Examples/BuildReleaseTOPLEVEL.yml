@@ -1,0 +1,21 @@
+# File: BuildReleaseTOPLEVEL.yml
+# Author: Thomas Dean
+
+name: $(BuildID)
+
+trigger: none
+
+parameters:
+- name: fileName
+  type: string
+
+variables:
+- name: major
+  value: 1
+- name: minor
+  value: $[counter(variables['major'], 100)]
+
+extends:
+  template: BuildReleaseTEMPLATE.yml
+  parameters:
+    fileName: ${{ parameters.fileName }}
